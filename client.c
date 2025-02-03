@@ -12,37 +12,49 @@
 #include "../ft_printf/ft_printf.h"
 #include "../libft/libft.h"
 #include <signal.h>
+#include <stdlib.h>
 #include <unistd.h>
 
-void	send_messages(int pid_server, char *message)
-{
-	int		i;
-	int		bit;
-	char	letter;
+static volatile int	g_signal_received = 0;
 
-	i = 0;
-	while (message[i])
+static void	handle_signal(int signal)
+{
+	g_signal_received = signal;
+}
+
+static void	send_char(int pid_server, unsigned char c)
+{
+	int	bit;
+
+	bit = 7;
+	while (bit >= 0)
 	{
-		letter = message[i];
-		bit = 0;
-		while (bit < 8)
+		g_signal_received = 0;
+		if ((c >> bit) & 1)
 		{
-			if (letter >> (7 - bit) & 1)
-				kill(pid_server, SIGUSR1);
-			else
-				kill(pid_server, SIGUSR2);
-			bit++;
-			usleep(100);
+			if (kill(pid_server, SIGUSR2) == -1)
+				return (ft_printf("Error al enviar SIGUSR2 ❌\n"), exit(1));
 		}
-		i++;
+		else
+		{
+			if (kill(pid_server, SIGUSR1) == -1)
+				return (ft_printf("Error al enviar SIGUSR1 ❌\n"), exit(1));
+		}
+		bit--;
+		while (g_signal_received != SIGUSR1)
+			usleep(100);
 	}
-	bit = 0;
-	while (bit < 8)
+}
+
+static void	send_message(int pid_server, char *message)
+{
+	while (*message)
 	{
-		kill(pid_server, SIGUSR2);
-		usleep(100);
-		bit++;
+		send_char(pid_server, (unsigned char)*message);
+		message++;
 	}
+	send_char(pid_server, '\0');
+	ft_printf("✅ Confirmación recibida del servidor.\n");
 }
 
 int	main(int argc, char **argv)
@@ -51,17 +63,17 @@ int	main(int argc, char **argv)
 
 	if (argc != 3)
 	{
-		ft_printf("Uso del cliente: %s <PID> <mensaje para el servidor> \n",
-			argv[0]);
+		ft_printf("Uso: %s <PID del servidor> <mensaje>\n", argv[0]);
 		return (1);
 	}
 	pid_server = ft_atoi(argv[1]);
 	if (pid_server <= 0)
 	{
-		ft_printf("Error: PID del servidor invalido. \n");
+		ft_printf("Error: PID del servidor inválido ❌\n");
 		return (1);
 	}
-	send_messages(pid_server, argv[2]);
-	ft_printf("Mensaje enviado con exito \n");
+	signal(SIGUSR1, handle_signal);
+	signal(SIGUSR2, handle_signal);
+	send_message(pid_server, argv[2]);
 	return (0);
 }
